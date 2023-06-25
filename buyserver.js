@@ -1,77 +1,28 @@
 /** @param {NS} ns **/
-function calcBestRam (ns, numServers) {
-  const ramList = []
 
-  let i = 1
-  while (ramList.length < 20) {
-    const result = Math.pow(2, i)
-    ramList.push(result)
-    i++
+export async function main (ns) {
+  while (ns.getPurchasedServers().length != 25) {
+    ns.purchaseServer(`pserver-${ns.getPurchasedServers().length}`, 2)
+    await ns.sleep(100)
   }
-
-  const affordableRamList = ramList.filter(ram => (numServers * ns.getPurchasedServerCost(ram)) <= ns.getServerMoneyAvailable('home'))
-
-  const bestRam = ramList[affordableRamList.length - 1]
-  return bestRam
+  let servers = await genServerList(ns)
+  // While we can upgrade our cheapest to upgrade server, do it
+  while (ns.getPurchasedServerUpgradeCost(servers[0].hostname, servers[0].maxRam * 2) <= ns.getPlayer().money) {
+    const server = servers[0]
+    ns.tprint(`Upgrading server ${server.hostname} to ${server.maxRam * 2} GB`)
+    await ns.upgradePurchasedServer(server.hostname, server.maxRam * 2)
+    servers = await genServerList(ns)
+    await ns.sleep(50)
+  }
 }
 
-function deletePurchasedServers (ns, numServers, newRam) {
-  const pservs = ns.getPurchasedServers()
-
-  const pservObjs = pservs.map(server => {
-    return {
-      name: server,
-      ram: ns.getServerMaxRam(server)
-    }
-  })
-
-  pservObjs.sort((a, b) => {
-    return a.ram - b.ram
-  })
-
-  const pservNames = []
-
-  pservObjs.forEach((server, index) => {
-    if (ns.getServerMaxRam(server.name) >= newRam) {
-
-    } else if (index < numServers) {
-      ns.killall(server.name)
-      ns.deleteServer(server.name)
-      return pservNames.push(server.name)
-    }
-  })
-
-  return pservNames
-}
-
-export async function main (ns, numServers = ns.args[0]) {
-  const ram = calcBestRam(ns, numServers)
-  const totalServers = ns.getPurchasedServers().length + numServers
-  const maxServers = (ns.getPurchasedServerLimit() < totalServers) ? ns.getPurchasedServerLimit() : totalServers
-
-  if (totalServers > ns.getPurchasedServerLimit()) {
-    if (await ns.prompt('The number of servers requested is not available. Do you want to delete existing servers with the smallest ram to make room?')) {
-      const pservNames = deletePurchasedServers(ns, totalServers - ns.getPurchasedServerLimit(), ram)
-
-      pservNames.forEach(name => {
-        if (ns.getServerMoneyAvailable('home') > ns.getPurchasedServerCost(ram)) {
-          ns.purchaseServer(name, ram)
-        }
-      })
-
-      while (ns.getPurchasedServers().length < maxServers) {
-        if (ns.getServerMoneyAvailable('home') > ns.getPurchasedServerCost(ram)) {
-          const host = 'pserv-' + ns.getPurchasedServers().length
-          ns.purchaseServer(host, ram)
-        }
-      }
-    }
-  } else {
-    while (ns.getPurchasedServers().length < maxServers) {
-      if (ns.getServerMoneyAvailable('home') > ns.getPurchasedServerCost(ram)) {
-        const host = 'pserv-' + ns.getPurchasedServers().length
-        ns.purchaseServer(host, ram)
-      }
-    }
+export async function genServerList (ns) {
+  const servers = []
+  for (const hostname of ns.getPurchasedServers()) {
+    servers.push(await ns.getServer(hostname))
   }
+  servers.sort(function (a, b) {
+    return a.maxRam - b.maxRam
+  })
+  return servers
 }
